@@ -89,9 +89,9 @@ jobs:
       shell: bash
       run: |
         set -eux
-        case ${{ github.ref_name }} in
+        case ${{ github.base_ref || github.ref_name }} in
           3.* | 4.*)
-            TRACK="${{ github.ref_name }}"
+            TRACK="${{ github.base_ref || github.ref_name }}"
             DO_RELEASE=true
             ;;
           main)
@@ -106,7 +106,7 @@ jobs:
         
         # Feature branches will be released to the 'latest' track, so we need
         # to include the branch name to disambiguate.
-        BRANCH="${{ github.ref_name }}-${{ github.sha }}"
+        BRANCH="${{ github.base_ref || github.ref_name }}-${{ github.sha }}"
         
         echo "test=$TRACK/edge/$BRANCH" >> "$GITHUB_OUTPUT"
         if [[ "$DO_RELEASE" == 'true' ]]; then
