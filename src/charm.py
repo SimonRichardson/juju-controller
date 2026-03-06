@@ -15,6 +15,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferRequires,
 )
+from charms.data_platform_libs.v0.s3 import S3Requirer
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
@@ -51,6 +52,7 @@ class JujuControllerCharm(CharmBase):
             last_bind_addresses=[],
             tracing_endpoints={},
             ca_cert=None,
+            s3_credentials=dict(),
         )
 
         # TODO (manadart 2024-03-05): Get these at need.
@@ -59,6 +61,9 @@ class JujuControllerCharm(CharmBase):
             socket_path=self.METRICS_SOCKET_PATH)
         self._config_change_socket = configchangesocket.ConfigChangeSocketClient(
             socket_path=self.CONFIG_SOCKET_PATH)
+        self._s3 = S3Requirer(self, "s3")
+
+        self._observe()
 
         self._observe()
 
@@ -89,6 +94,10 @@ class JujuControllerCharm(CharmBase):
         )
         self.framework.observe(
             self._certificate_transfer.on.certificates_removed, self._on_receive_ca_cert_removed)
+        self.framework.observe(
+            self._s3.on.credentials_changed, self._on_s3_credentials_changed)
+        self.framework.observe(
+            self._s3.on.credentials_gone, self._on_s3_credentials_gone)
 
     def _on_install(self, event: InstallEvent):
         """Ensure that the controller configuration file exists."""
@@ -355,6 +364,16 @@ class JujuControllerCharm(CharmBase):
             ca_cert=self._stored.ca_cert,
         )
 
+    def _on_s3_credentials_changed(self, _event):
+        """Handle new or updated S3 credentials."""
+        credentials = self._s3.get_s3_connection_info()
+        self._stored.s3_credentials = credentials
+        logger.info("received S3 credentials update for bucket %s", credentials.get("bucket"))
+
+    def _on_s3_credentials_gone(self, _event):
+        """Handle removal of S3 credentials."""
+        self._stored.s3_credentials = dict()
+        logger.info("S3 credentials removed")
 
 def metrics_username(relation: Relation) -> str:
     """

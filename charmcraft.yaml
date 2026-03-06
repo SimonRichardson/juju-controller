@@ -26,6 +26,10 @@ requires:
     interface: certificate_transfer
     limit: 1
     optional: true
+  s3-backend:
+    interface: s3
+    limit: 1
+    optional: true
 
 peers:
   dbcluster:
