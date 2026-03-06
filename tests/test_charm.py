@@ -293,6 +293,51 @@ class TestCharm(unittest.TestCase):
         harness.evaluate_status()
         self.assertIsInstance(harness.charm.unit.status, ActiveStatus)
 
+    def test_s3_relation_credentials_changed(self):
+        harness = self.harness
+        harness.set_leader(True)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {
+                "access-key": "ak",
+                "secret-key": "sk",
+                "bucket": "test-bucket",
+                "endpoint": "https://s3.example",
+            },
+        )
+
+        self.assertEqual(
+            harness.charm._stored.s3_credentials,
+            {
+                "access-key": "ak",
+                "secret-key": "sk",
+                "bucket": "test-bucket",
+                "endpoint": "https://s3.example",
+            },
+        )
+
+    def test_s3_relation_credentials_gone(self):
+        harness = self.harness
+        harness.set_leader(True)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {"access-key": "ak", "secret-key": "sk"},
+        )
+        self.assertIn("access-key", harness.charm._stored.s3_credentials)
+
+        harness.remove_relation(relation_id)
+        self.assertEqual(harness.charm._stored.s3_credentials, {})
+
 
 class mockNetwork:
     def __init__(self, addresses):

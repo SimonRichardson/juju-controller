@@ -19,3 +19,6 @@ provides:
 peers:
   dbcluster:
     interface: dbcluster
+requires:
+  s3:
+    interface: s3
