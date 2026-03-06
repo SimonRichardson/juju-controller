@@ -32,3 +32,18 @@ class ControlSocketClient(unixsocket.SocketClient):
             path=f'/metrics-users/{username}',
         )
         logger.debug('result of remove_metrics_user request: %r', resp)
+
+    def add_s3_credentials(self, credentials: dict):
+        resp = self.json_request(
+            method='POST',
+            path='/s3-credentials',
+            body=credentials,
+        )
+        logger.debug('result of add_s3_credentials request: %r', resp)
+
+    def remove_s3_credentials(self):
+        resp = self.json_request(
+            method='DELETE',
+            path='/s3-credentials',
+        )
+        logger.debug('result of remove_s3_credentials request: %r', resp)

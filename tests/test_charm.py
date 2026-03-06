@@ -293,7 +293,8 @@ class TestCharm(unittest.TestCase):
         harness.evaluate_status()
         self.assertIsInstance(harness.charm.unit.status, ActiveStatus)
 
-    def test_s3_relation_credentials_changed(self):
+    @patch("controlsocket.ControlSocketClient.add_s3_credentials")
+    def test_s3_relation_credentials_changed(self, mock_add_s3_credentials):
         harness = self.harness
         harness.set_leader(True)
 
@@ -320,8 +321,51 @@ class TestCharm(unittest.TestCase):
                 "endpoint": "https://s3.example",
             },
         )
+        mock_add_s3_credentials.assert_called_once_with(harness.charm._stored.s3_credentials)
 
-    def test_s3_relation_credentials_gone(self):
+    @patch("controlsocket.ControlSocketClient.add_s3_credentials")
+    def test_s3_relation_credentials_updated(self, mock_add_s3_credentials):
+        harness = self.harness
+        harness.set_leader(True)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
+        )
+        self.assertEqual(harness.charm._stored.s3_credentials["access-key"], "ak")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"},
+        )
+        self.assertEqual(
+            harness.charm._stored.s3_credentials,
+            {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"},
+        )
+        mock_add_s3_credentials.assert_called_with(
+            {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"}
+        )
+
+    def test_s3_relation_sets_bucket_on_join(self):
+        harness = self.harness
+        harness.set_leader(True)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        # Bucket is auto-set by the S3Requirer when bucket_name is not provided.
+        data = harness.get_relation_data(relation_id, harness.charm.app.name)
+        self.assertEqual(data["bucket"], f"relation-{relation_id}")
+        self.assertEqual(harness.charm._stored.s3_credentials, {})
+
+    @patch("controlsocket.ControlSocketClient.remove_s3_credentials")
+    @patch("controlsocket.ControlSocketClient.add_s3_credentials")
+    def test_s3_relation_credentials_gone(self, *_):
         harness = self.harness
         harness.set_leader(True)
 
