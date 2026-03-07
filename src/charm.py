@@ -20,7 +20,7 @@ from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
 from ops.main import main
-from ops.model import ActiveStatus, BlockedStatus, Relation
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, Relation
 from pathlib import Path
 from typing import List
 
@@ -371,6 +371,7 @@ class JujuControllerCharm(CharmBase):
         if self.unit.is_leader():
             try:
                 self._control_socket.add_s3_credentials(credentials)
+                self.unit.status = MaintenanceStatus("applying s3 credentials")
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("failed to apply S3 credentials: %s", exc)
                 self.unit.status = BlockedStatus("failed to apply s3 credentials")
