@@ -293,9 +293,10 @@ class JujuControllerCharm(CharmBase):
 
     def _on_s3_credentials_changed(self, _event):
         """Handle new or updated S3 credentials."""
-        credentials = self._s3.get_s3_connection_info()
-        self._stored.s3_credentials = credentials
         if self.unit.is_leader():
+            credentials = self._s3.get_s3_connection_info()
+            self._stored.s3_credentials = credentials
+
             try:
                 self._control_socket.add_s3_credentials(credentials)
                 self.unit.status = MaintenanceStatus("applying s3 credentials")
