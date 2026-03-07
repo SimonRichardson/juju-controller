@@ -295,11 +295,13 @@ class JujuControllerCharm(CharmBase):
         """Handle new or updated S3 credentials."""
         credentials = self._s3.get_s3_connection_info()
         self._stored.s3_credentials = credentials
-        self._control_socket.add_s3_credentials(credentials)
+        if self.unit.is_leader():
+            self._control_socket.add_s3_credentials(credentials)
 
     def _on_s3_credentials_gone(self, _event):
         """Handle removal of S3 credentials."""
-        self._control_socket.remove_s3_credentials()
+        if self.unit.is_leader():
+            self._control_socket.remove_s3_credentials()
         self._stored.s3_credentials = dict()
 
 

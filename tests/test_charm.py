@@ -324,6 +324,26 @@ class TestCharm(unittest.TestCase):
         mock_add_s3_credentials.assert_called_once_with(harness.charm._stored.s3_credentials)
 
     @patch("controlsocket.ControlSocketClient.add_s3_credentials")
+    def test_s3_relation_credentials_changed_non_leader_no_set(self, mock_add_s3_credentials):
+        harness = self.harness
+        harness.set_leader(False)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
+        )
+
+        self.assertEqual(
+            harness.charm._stored.s3_credentials,
+            {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
+        )
+        mock_add_s3_credentials.assert_not_called()
+
+    @patch("controlsocket.ControlSocketClient.add_s3_credentials")
     def test_s3_relation_credentials_updated(self, mock_add_s3_credentials):
         harness = self.harness
         harness.set_leader(True)
@@ -381,6 +401,24 @@ class TestCharm(unittest.TestCase):
 
         harness.remove_relation(relation_id)
         self.assertEqual(harness.charm._stored.s3_credentials, {})
+
+    @patch("controlsocket.ControlSocketClient.remove_s3_credentials")
+    def test_s3_relation_credentials_gone_non_leader(self, mock_remove_s3_credentials):
+        harness = self.harness
+        harness.set_leader(False)
+
+        relation_id = harness.add_relation("s3", "s3-integrator")
+        harness.add_relation_unit(relation_id, "s3-integrator/0")
+
+        harness.update_relation_data(
+            relation_id,
+            "s3-integrator",
+            {"access-key": "ak", "secret-key": "sk"},
+        )
+        harness.remove_relation(relation_id)
+
+        self.assertEqual(harness.charm._stored.s3_credentials, {})
+        mock_remove_s3_credentials.assert_not_called()
 
 
 class mockNetwork:
