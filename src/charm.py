@@ -296,12 +296,20 @@ class JujuControllerCharm(CharmBase):
         credentials = self._s3.get_s3_connection_info()
         self._stored.s3_credentials = credentials
         if self.unit.is_leader():
-            self._control_socket.add_s3_credentials(credentials)
+            try:
+                self._control_socket.add_s3_credentials(credentials)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error("failed to apply S3 credentials: %s", exc)
+                self.unit.status = BlockedStatus("failed to apply s3 credentials")
 
     def _on_s3_credentials_gone(self, _event):
         """Handle removal of S3 credentials."""
         if self.unit.is_leader():
-            self._control_socket.remove_s3_credentials()
+            try:
+                self._control_socket.remove_s3_credentials()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error("failed to remove S3 credentials: %s", exc)
+                self.unit.status = BlockedStatus("failed to remove s3 credentials")
         self._stored.s3_credentials = dict()
 
 
