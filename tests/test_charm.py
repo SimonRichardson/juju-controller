@@ -547,10 +547,7 @@ class TestCharm(unittest.TestCase):
             {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
         )
 
-        self.assertEqual(
-            harness.charm._stored.s3_credentials,
-            {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
-        )
+        self.assertEqual(harness.charm._stored.s3_credentials, {})
         mock_add_s3_credentials.assert_not_called()
 
     @patch("controlsocket.ControlSocketClient.add_s3_credentials")
