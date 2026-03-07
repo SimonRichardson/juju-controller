@@ -9,7 +9,7 @@ import unittest
 import yaml
 
 from charm import JujuControllerCharm, AgentConfException
-from ops.model import BlockedStatus, ActiveStatus
+from ops.model import BlockedStatus, ActiveStatus, MaintenanceStatus
 from ops.testing import Harness
 from unittest.mock import mock_open, patch
 
@@ -322,6 +322,7 @@ class TestCharm(unittest.TestCase):
             },
         )
         mock_add_s3_credentials.assert_called_once_with(harness.charm._stored.s3_credentials)
+        self.assertIsInstance(harness.charm.unit.status, MaintenanceStatus)
 
     @patch(
         "controlsocket.ControlSocketClient.add_s3_credentials",
@@ -397,6 +398,7 @@ class TestCharm(unittest.TestCase):
         mock_add_s3_credentials.assert_called_with(
             {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"}
         )
+        self.assertIsInstance(harness.charm.unit.status, MaintenanceStatus)
 
     def test_s3_relation_sets_bucket_on_join(self):
         harness = self.harness
