@@ -48,6 +48,13 @@ class TestCharm(unittest.TestCase):
         self.addCleanup(self.harness.cleanup)
         self.harness.begin()
 
+    def test_start_sets_active_status(self):
+        harness = Harness(JujuControllerCharm)
+        self.addCleanup(harness.cleanup)
+        harness.begin()
+        harness.charm.on.start.emit()
+        self.assertIsInstance(harness.charm.unit.status, ActiveStatus)
+
     def test_dashboard_relation_joined(self):
         harness = self.harness
 
