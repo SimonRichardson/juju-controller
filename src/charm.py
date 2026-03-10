@@ -15,7 +15,7 @@ from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferRequires,
 )
-from charms.data_platform_libs.v0.s3 import S3Requirer
+from charms.data_platform_libs.v0.s3 import CredentialsChangedEvent, S3Requirer
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
@@ -365,13 +365,18 @@ class JujuControllerCharm(CharmBase):
             ca_cert=self._stored.ca_cert,
         )
 
-    def _on_s3_credentials_changed(self, _event):
+    def _on_s3_credentials_changed(self, event: CredentialsChangedEvent):
         """Handle new or updated S3 credentials."""
         if self.unit.is_leader():
-            credentials = self._s3.get_s3_connection_info()
+            credentials = {
+                'access_key': event.access_key,
+                'secret_key': event.secret_key,
+                'endpoint': event.endpoint,
+            }
             self._stored.s3_credentials = credentials
 
             try:
+                logger.info("applying new S3 credentials")
                 self._control_socket.add_s3_credentials(credentials)
                 self.unit.status = MaintenanceStatus("applying s3 credentials")
             except Exception as exc:  # pragma: no cover - defensive
@@ -383,10 +388,10 @@ class JujuControllerCharm(CharmBase):
         if self.unit.is_leader():
             try:
                 self._control_socket.remove_s3_credentials()
+                self._stored.s3_credentials = dict()
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("failed to remove S3 credentials: %s", exc)
                 self.unit.status = BlockedStatus("failed to remove s3 credentials")
-        self._stored.s3_credentials = dict()
 
 def metrics_username(relation: Relation) -> str:
     """
