@@ -319,16 +319,16 @@ class TestCharm(unittest.TestCase):
             },
         )
 
+        expected_credentials = {
+            "access_key": "ak",
+            "secret_key": "sk",
+            "endpoint": "https://s3.example",
+        }
         self.assertEqual(
             harness.charm._stored.s3_credentials,
-            {
-                "access-key": "ak",
-                "secret-key": "sk",
-                "bucket": "test-bucket",
-                "endpoint": "https://s3.example",
-            },
+            expected_credentials,
         )
-        mock_add_s3_credentials.assert_called_once_with(harness.charm._stored.s3_credentials)
+        mock_add_s3_credentials.assert_called_once_with(expected_credentials)
         self.assertIsInstance(harness.charm.unit.status, MaintenanceStatus)
 
     @patch(
@@ -350,7 +350,7 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(
             harness.charm._stored.s3_credentials,
-            {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
+            {"access_key": "ak", "secret_key": "sk", "endpoint": None},
         )
         self.assertIsInstance(harness.charm.unit.status, BlockedStatus)
         self.assertIn(
@@ -388,7 +388,10 @@ class TestCharm(unittest.TestCase):
             "s3-integrator",
             {"access-key": "ak", "secret-key": "sk", "bucket": "test-bucket"},
         )
-        self.assertEqual(harness.charm._stored.s3_credentials["access-key"], "ak")
+        self.assertEqual(
+            harness.charm._stored.s3_credentials,
+            {"access_key": "ak", "secret_key": "sk", "endpoint": None},
+        )
 
         harness.update_relation_data(
             relation_id,
@@ -397,10 +400,10 @@ class TestCharm(unittest.TestCase):
         )
         self.assertEqual(
             harness.charm._stored.s3_credentials,
-            {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"},
+            {"access_key": "ak2", "secret_key": "sk2", "endpoint": None},
         )
         mock_add_s3_credentials.assert_called_with(
-            {"access-key": "ak2", "secret-key": "sk2", "bucket": "test-bucket"}
+            {"access_key": "ak2", "secret_key": "sk2", "endpoint": None}
         )
         self.assertIsInstance(harness.charm.unit.status, MaintenanceStatus)
 
@@ -430,7 +433,8 @@ class TestCharm(unittest.TestCase):
             "s3-integrator",
             {"access-key": "ak", "secret-key": "sk"},
         )
-        self.assertIn("access-key", harness.charm._stored.s3_credentials)
+        expected_credentials = {"access_key": "ak", "secret_key": "sk", "endpoint": None}
+        self.assertEqual(harness.charm._stored.s3_credentials, expected_credentials)
 
         harness.remove_relation(relation_id)
         self.assertEqual(harness.charm._stored.s3_credentials, {})
@@ -472,7 +476,10 @@ class TestCharm(unittest.TestCase):
 
         harness.remove_relation(relation_id)
 
-        self.assertEqual(harness.charm._stored.s3_credentials, {})
+        self.assertEqual(
+            harness.charm._stored.s3_credentials,
+            {"access_key": "ak", "secret_key": "sk", "endpoint": None},
+        )
         self.assertIsInstance(harness.charm.unit.status, BlockedStatus)
         self.assertIn("failed to remove s3 credentials", harness.charm.unit.status.message)
 
