@@ -17,6 +17,11 @@ provides:
   metrics-endpoint:
     interface: prometheus_scrape
 
+requires:
+  tracing:
+    interface: tracing
+    limit: 1
+
 peers:
   dbcluster:
     interface: dbcluster
@@ -41,4 +46,6 @@ platforms:
 
 charm-libs:
   - lib: prometheus_k8s.prometheus_scrape
+    version: "0"
+  - lib: tempo_coordinator_k8s.tracing
     version: "0"
