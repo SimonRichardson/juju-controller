@@ -8,6 +8,12 @@ import unittest
 
 import yaml
 
+from charms.tempo_coordinator_k8s.v0.tracing import (
+    ProtocolType,
+    Receiver,
+    TracingProviderAppData,
+    TransportProtocolType,
+)
 from charm import JujuControllerCharm, AgentConfException
 from ops.model import BlockedStatus, ActiveStatus
 from ops.testing import Harness
@@ -40,6 +46,21 @@ apiaddresses:
 - "[::1]:17070"
 cacert: fake
 '''
+
+
+def tracing_provider_data():
+    return TracingProviderAppData(
+        receivers=[
+            Receiver(
+                protocol=ProtocolType(name="otlp_grpc", type=TransportProtocolType.grpc),
+                url="tempo-grpc:4317",
+            ),
+            Receiver(
+                protocol=ProtocolType(name="otlp_http", type=TransportProtocolType.http),
+                url="http://tempo-http:4318",
+            ),
+        ]
+    ).dump()
 
 
 class TestCharm(unittest.TestCase):
@@ -116,6 +137,41 @@ class TestCharm(unittest.TestCase):
         harness.remove_relation(relation_id)
         mock_remove_user.assert_called_once_with(f'juju-metrics-r{relation_id}')
 
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    def test_tracing_relation_updates_endpoints(self, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("tracing", "tempo-coordinator")
+        harness.add_relation_unit(relation_id, "tempo-coordinator/0")
+
+        provider_data = tracing_provider_data()
+
+        harness.update_relation_data(relation_id, "tempo-coordinator", provider_data)
+
+        self.assertEqual(
+            harness.charm._stored.tracing_endpoints,
+            {"grpc": "tempo-grpc:4317", "http": "http://tempo-http:4318"},
+        )
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    def test_tracing_relation_removed_clears_endpoints(self, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("tracing", "tempo-coordinator")
+        harness.add_relation_unit(relation_id, "tempo-coordinator/0")
+
+        harness.update_relation_data(
+            relation_id, "tempo-coordinator", tracing_provider_data()
+        )
+        self.assertEqual(
+            harness.charm._stored.tracing_endpoints,
+            {"grpc": "tempo-grpc:4317", "http": "http://tempo-http:4318"},
+        )
+
+        harness.remove_relation(relation_id)
+
+        self.assertEqual(harness.charm._stored.tracing_endpoints, {})
+
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf_apiaddresses_missing)
     def test_apiaddresses_missing(self, _):
         harness = self.harness
@@ -172,7 +228,7 @@ class TestCharm(unittest.TestCase):
 
         # Have another unit enter the relation.
         # Its bind address should end up in the application data bindings list.
-        # Note that the agent ID doesn not correspond with the unit's ID
+        # Note that the agent ID does not correspond with the unit's ID
         relation_id = harness.add_relation('dbcluster', harness.charm.app.name)
         harness.add_relation_unit(relation_id, 'juju-controller/1')
         self.harness.update_relation_data(
@@ -251,7 +307,8 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(yaml.safe_load(written), {'db-bind-addresses': bound})
 
-        # The last thing we should have done is send a reload request via the socket..
+        # The last thing we should have done is send a reload request via the
+        # socket..
         mock_reload_config.assert_called_once()
 
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)

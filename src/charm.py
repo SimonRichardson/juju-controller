@@ -11,6 +11,7 @@ import urllib.parse
 import yaml
 
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
@@ -34,18 +35,23 @@ class JujuControllerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
 
-        self._observe()
+        self.tracing_requirer = TracingEndpointRequirer(
+            self, protocols=["otlp_http", "otlp_grpc"]
+        )
 
         self._stored.set_default(
             last_bind_addresses=[],
+            tracing_endpoints={},
         )
 
         # TODO (manadart 2024-03-05): Get these at need.
-        # No need to instantiate them for every invocatoin.
+        # No need to instantiate them for every invocation.
         self._control_socket = controlsocket.ControlSocketClient(
             socket_path=self.METRICS_SOCKET_PATH)
         self._config_change_socket = configchangesocket.ConfigChangeSocketClient(
             socket_path=self.CONFIG_SOCKET_PATH)
+
+        self._observe()
 
     def _observe(self):
         """Set up all framework event observers."""
@@ -64,6 +70,10 @@ class JujuControllerCharm(CharmBase):
             self.on.dbcluster_relation_changed, self._on_dbcluster_relation_changed)
         self.framework.observe(
             self.on.dbcluster_relation_departed, self._on_dbcluster_relation_departed)
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_changed, self._on_tracing_relation_changed)
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_removed, self._on_tracing_relation_removed)
 
     def _on_install(self, event: InstallEvent):
         """Ensure that the controller configuration file exists."""
@@ -169,6 +179,20 @@ class JujuControllerCharm(CharmBase):
     def _on_dbcluster_relation_departed(self, event):
         relation = event.relation
         self._update_bind_addresses(relation)
+
+    def _on_tracing_relation_changed(self, event):
+        if not self.tracing_requirer.is_ready(event.relation):
+            return
+
+        self._stored.tracing_endpoints = {
+            "grpc": self.tracing_requirer.get_endpoint("otlp_grpc", event.relation),
+            "http": self.tracing_requirer.get_endpoint("otlp_http", event.relation),
+        }
+        logger.info("tracing endpoints updated: %s", self._stored.tracing_endpoints)
+
+    def _on_tracing_relation_removed(self, event):
+        self._stored.tracing_endpoints = {}
+        logger.info("tracing endpoints cleared")
 
     def _update_bind_addresses(self, relation):
         """Maintain our own bind address in relation data.
