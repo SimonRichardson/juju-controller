@@ -8,6 +8,9 @@ import unittest
 
 import yaml
 
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    ProviderApplicationData,
+)
 from charms.tempo_coordinator_k8s.v0.tracing import (
     ProtocolType,
     Receiver,
@@ -61,6 +64,10 @@ def tracing_provider_data():
             ),
         ]
     ).dump()
+
+
+def certificate_provider_data(certificates):
+    return ProviderApplicationData(certificates=certificates).dump()
 
 
 class TestCharm(unittest.TestCase):
@@ -171,6 +178,42 @@ class TestCharm(unittest.TestCase):
         harness.remove_relation(relation_id)
 
         self.assertEqual(harness.charm._stored.tracing_endpoints, {})
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    def test_receive_ca_cert_updates_stored_ca_cert(self, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("receive-ca-cert", "cert-provider")
+        harness.add_relation_unit(relation_id, "cert-provider/0")
+
+        cert_a = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
+        cert_b = "-----BEGIN CERTIFICATE-----\nb\n-----END CERTIFICATE-----"
+        harness.update_relation_data(
+            relation_id,
+            "cert-provider",
+            certificate_provider_data({cert_b, cert_a}),
+        )
+
+        self.assertEqual(harness.charm._stored.ca_cert, "\n".join([cert_a, cert_b]))
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    def test_receive_ca_cert_removed_clears_stored_ca_cert(self, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("receive-ca-cert", "cert-provider")
+        harness.add_relation_unit(relation_id, "cert-provider/0")
+
+        cert = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
+        harness.update_relation_data(
+            relation_id,
+            "cert-provider",
+            certificate_provider_data({cert}),
+        )
+        self.assertEqual(harness.charm._stored.ca_cert, cert)
+
+        harness.remove_relation(relation_id)
+
+        self.assertIsNone(harness.charm._stored.ca_cert)
 
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf_apiaddresses_missing)
     def test_apiaddresses_missing(self, _):

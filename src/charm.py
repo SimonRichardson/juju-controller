@@ -12,6 +12,9 @@ import yaml
 
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
 from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
@@ -38,10 +41,14 @@ class JujuControllerCharm(CharmBase):
         self.tracing_requirer = TracingEndpointRequirer(
             self, protocols=["otlp_http", "otlp_grpc"]
         )
+        self._certificate_transfer = CertificateTransferRequires(
+            self, relationship_name='receive-ca-cert'
+        )
 
         self._stored.set_default(
             last_bind_addresses=[],
             tracing_endpoints={},
+            ca_cert=None,
         )
 
         # TODO (manadart 2024-03-05): Get these at need.
@@ -74,6 +81,12 @@ class JujuControllerCharm(CharmBase):
             self.tracing_requirer.on.endpoint_changed, self._on_tracing_relation_changed)
         self.framework.observe(
             self.tracing_requirer.on.endpoint_removed, self._on_tracing_relation_removed)
+        self.framework.observe(
+            self._certificate_transfer.on.certificate_set_updated,
+            self._on_receive_ca_cert_updated,
+        )
+        self.framework.observe(
+            self._certificate_transfer.on.certificates_removed, self._on_receive_ca_cert_removed)
 
     def _on_install(self, event: InstallEvent):
         """Ensure that the controller configuration file exists."""
@@ -193,6 +206,18 @@ class JujuControllerCharm(CharmBase):
     def _on_tracing_relation_removed(self, event):
         self._stored.tracing_endpoints = {}
         logger.info("tracing endpoints cleared")
+
+    def _on_receive_ca_cert_updated(self, event):
+        ca_list = event.certificates
+        if not ca_list:
+            return
+
+        self._stored.ca_cert = '\n'.join(sorted(ca_list))
+        logger.info("CA certificate updated from relation id %s", event.relation_id)
+
+    def _on_receive_ca_cert_removed(self, event):
+        self._stored.ca_cert = None
+        logger.info("CA certificate removed from relation id %s", event.relation_id)
 
     def _update_bind_addresses(self, relation):
         """Maintain our own bind address in relation data.
@@ -335,5 +360,4 @@ class DBBindAddressException(Exception):
 
 
 if __name__ == "__main__":
-
     main(JujuControllerCharm)
