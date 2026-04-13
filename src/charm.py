@@ -198,14 +198,16 @@ class JujuControllerCharm(CharmBase):
             return
 
         self._stored.tracing_endpoints = {
-            "grpc": self.tracing_requirer.get_endpoint("otlp_grpc", event.relation),
-            "http": self.tracing_requirer.get_endpoint("otlp_http", event.relation),
+            "otlp_grpc": self.tracing_requirer.get_endpoint("otlp_grpc", event.relation),
+            "otlp_http": self.tracing_requirer.get_endpoint("otlp_http", event.relation),
         }
         logger.info("tracing endpoints updated: %s", self._stored.tracing_endpoints)
+        self._update_charm_tracing_config()
 
     def _on_tracing_relation_removed(self, event):
         self._stored.tracing_endpoints = {}
         logger.info("tracing endpoints cleared")
+        self._update_charm_tracing_config()
 
     def _on_receive_ca_cert_updated(self, event):
         ca_list = event.certificates
@@ -214,10 +216,12 @@ class JujuControllerCharm(CharmBase):
 
         self._stored.ca_cert = '\n'.join(sorted(ca_list))
         logger.info("CA certificate updated from relation id %s", event.relation_id)
+        self._update_charm_tracing_config()
 
     def _on_receive_ca_cert_removed(self, event):
         self._stored.ca_cert = None
         logger.info("CA certificate removed from relation id %s", event.relation_id)
+        self._update_charm_tracing_config()
 
     def _update_bind_addresses(self, relation):
         """Maintain our own bind address in relation data.
@@ -332,6 +336,22 @@ class JujuControllerCharm(CharmBase):
     def _request_config_reload(self):
         """Send a reload request to the config reload socket."""
         self._config_change_socket.reload_config()
+
+    def _update_charm_tracing_config(self):
+        """Update charm configuration with current tracing endpoint and CA cert information."""
+        self._control_socket.set_charm_tracing_config(
+            grpc_endpoint=(
+                self._stored.tracing_endpoints["otlp_grpc"]
+                if "otlp_grpc" in self._stored.tracing_endpoints
+                else None
+            ),
+            http_endpoint=(
+                self._stored.tracing_endpoints["otlp_http"]
+                if "otlp_http" in self._stored.tracing_endpoints
+                else None
+            ),
+            ca_cert=self._stored.ca_cert,
+        )
 
 
 def metrics_username(relation: Relation) -> str:
