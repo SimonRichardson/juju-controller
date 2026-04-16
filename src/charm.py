@@ -11,6 +11,10 @@ import urllib.parse
 import yaml
 
 from charms.prometheus_k8s.v0.prometheus_scrape import MetricsEndpointProvider
+from charms.tempo_coordinator_k8s.v0.tracing import TracingEndpointRequirer
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferRequires,
+)
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import StoredState
 from ops.charm import InstallEvent, RelationJoinedEvent, RelationDepartedEvent
@@ -34,18 +38,27 @@ class JujuControllerCharm(CharmBase):
     def __init__(self, *args):
         super().__init__(*args)
 
-        self._observe()
+        self.tracing_requirer = TracingEndpointRequirer(
+            self, protocols=["otlp_http", "otlp_grpc"]
+        )
+        self._certificate_transfer = CertificateTransferRequires(
+            self, relationship_name='receive-ca-cert'
+        )
 
         self._stored.set_default(
             last_bind_addresses=[],
+            tracing_endpoints={},
+            ca_cert=None,
         )
 
         # TODO (manadart 2024-03-05): Get these at need.
-        # No need to instantiate them for every invocatoin.
+        # No need to instantiate them for every invocation.
         self._control_socket = controlsocket.ControlSocketClient(
             socket_path=self.METRICS_SOCKET_PATH)
         self._config_change_socket = configchangesocket.ConfigChangeSocketClient(
             socket_path=self.CONFIG_SOCKET_PATH)
+
+        self._observe()
 
     def _observe(self):
         """Set up all framework event observers."""
@@ -64,12 +77,25 @@ class JujuControllerCharm(CharmBase):
             self.on.dbcluster_relation_changed, self._on_dbcluster_relation_changed)
         self.framework.observe(
             self.on.dbcluster_relation_departed, self._on_dbcluster_relation_departed)
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_changed, self._on_tracing_relation_changed)
+        self.framework.observe(
+            self.tracing_requirer.on.endpoint_removed, self._on_tracing_relation_removed)
+        self.framework.observe(
+            self._certificate_transfer.on.certificate_set_updated,
+            self._on_receive_ca_cert_updated,
+        )
+        self.framework.observe(
+            self._certificate_transfer.on.certificates_removed, self._on_receive_ca_cert_removed)
 
     def _on_install(self, event: InstallEvent):
         """Ensure that the controller configuration file exists."""
         file_path = self._controller_config_path()
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         open(file_path, 'w+').close()
+
+    def _on_start(self, _):
+        self.unit.status = ActiveStatus()
 
     def _on_collect_status(self, event: CollectStatusEvent):
         if len(self._stored.last_bind_addresses) > 1:
@@ -101,12 +127,11 @@ class JujuControllerCharm(CharmBase):
 
     def _on_website_relation_joined(self, event):
         """Connect a website relation."""
-        logger.info('got a new website relation: %r', event)
-
-        try:
-            api_port = self.api_port()
-        except AgentConfException as e:
-            logger.error('cannot read controller API port from agent configuration: %s', e)
+        logger.info("got a new website relation: %r", event)
+        port = self.api_port()
+        if port is None:
+            logger.error("machine does not appear to be a controller")
+            self.unit.status = BlockedStatus('machine does not appear to be a controller')
             return
 
         address = None
@@ -117,7 +142,7 @@ class JujuControllerCharm(CharmBase):
                 event.relation.data[self.unit].update({
                     'hostname': str(address),
                     'private-address': str(address),
-                    'port': str(api_port)
+                    'port': str(port)
                 })
 
     def _on_metrics_endpoint_relation_created(self, event: RelationJoinedEvent):
@@ -129,6 +154,8 @@ class JujuControllerCharm(CharmBase):
         try:
             api_port = self.api_port()
         except AgentConfException as e:
+            self.unit.status = BlockedStatus(
+                f"can't read controller API port from agent.conf: {e}")
             logger.error('cannot read controller API port from agent configuration: %s', e)
             return
 
@@ -165,6 +192,36 @@ class JujuControllerCharm(CharmBase):
     def _on_dbcluster_relation_departed(self, event):
         relation = event.relation
         self._update_bind_addresses(relation)
+
+    def _on_tracing_relation_changed(self, event):
+        if not self.tracing_requirer.is_ready(event.relation):
+            return
+
+        self._stored.tracing_endpoints = {
+            "otlp_grpc": self.tracing_requirer.get_endpoint("otlp_grpc", event.relation),
+            "otlp_http": self.tracing_requirer.get_endpoint("otlp_http", event.relation),
+        }
+        logger.info("tracing endpoints updated: %s", self._stored.tracing_endpoints)
+        self._update_charm_tracing_config()
+
+    def _on_tracing_relation_removed(self, event):
+        self._stored.tracing_endpoints = {}
+        logger.info("tracing endpoints cleared")
+        self._update_charm_tracing_config()
+
+    def _on_receive_ca_cert_updated(self, event):
+        ca_list = event.certificates
+        if not ca_list:
+            return
+
+        self._stored.ca_cert = '\n'.join(sorted(ca_list))
+        logger.info("CA certificate updated from relation id %s", event.relation_id)
+        self._update_charm_tracing_config()
+
+    def _on_receive_ca_cert_removed(self, event):
+        self._stored.ca_cert = None
+        logger.info("CA certificate removed from relation id %s", event.relation_id)
+        self._update_charm_tracing_config()
 
     def _update_bind_addresses(self, relation):
         """Maintain our own bind address in relation data.
@@ -279,6 +336,22 @@ class JujuControllerCharm(CharmBase):
     def _request_config_reload(self):
         """Send a reload request to the config reload socket."""
         self._config_change_socket.reload_config()
+
+    def _update_charm_tracing_config(self):
+        """Update charm configuration with current tracing endpoint and CA cert information."""
+        self._control_socket.set_charm_tracing_config(
+            grpc_endpoint=(
+                self._stored.tracing_endpoints["otlp_grpc"]
+                if "otlp_grpc" in self._stored.tracing_endpoints
+                else None
+            ),
+            http_endpoint=(
+                self._stored.tracing_endpoints["otlp_http"]
+                if "otlp_http" in self._stored.tracing_endpoints
+                else None
+            ),
+            ca_cert=self._stored.ca_cert,
+        )
 
 
 def metrics_username(relation: Relation) -> str:

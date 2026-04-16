@@ -32,3 +32,22 @@ class ControlSocketClient(unixsocket.SocketClient):
             path=f'/metrics-users/{username}',
         )
         logger.debug('result of remove_metrics_user request: %r', resp)
+
+    def set_charm_tracing_config(
+        self,
+        grpc_endpoint: Optional[str],
+        http_endpoint: Optional[str],
+        ca_cert: Optional[str],
+    ):
+        """Set the tracing configuration for the charm."""
+        body = {
+            "grpc_endpoint": grpc_endpoint,
+            "http_endpoint": http_endpoint,
+            "ca_cert": ca_cert,
+        }
+        resp = self.json_request(
+            method='POST',
+            path='/charm-tracing-config',
+            body=body,
+        )
+        logger.debug('result of set_charm_tracing_config request: %r', resp)

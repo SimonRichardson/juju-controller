@@ -1,34 +1,58 @@
+name: juju-controller
+description: |
+  The Juju controller charm is used to expose various pieces
+  of functionality of a Juju controller.
+summary: |
+  The Juju controller.
 type: charm
+
+assumes:
+- juju >= 4.0
+
+provides: 
+  dashboard:
+    interface: juju-dashboard
+  website:
+    interface: http
+  metrics-endpoint:
+    interface: prometheus_scrape
+
+requires:
+  tracing:
+    interface: tracing
+    limit: 1
+    optional: true
+  receive-ca-cert:
+    interface: certificate_transfer
+    limit: 1
+    optional: true
+
+peers:
+  dbcluster:
+    interface: dbcluster
+
 parts:
   charm:
-    charm-python-packages: [setuptools,markdown]
-bases:
-    - build-on:
-        - name: ubuntu
-          channel: "24.04"
-          architectures: ["amd64"]
-      run-on:
-        - name: ubuntu
-          channel: "24.04"
-          architectures:
-              - amd64
-              - arm64
-              - s390x
-              - ppc64el
-              - riscv64
-        - name: ubuntu
-          channel: "22.04"
-          architectures:
-              - amd64
-              - arm64
-              - s390x
-              - ppc64el
-              - riscv64
-        - name: ubuntu
-          channel: "20.04"
-          architectures:
-              - amd64
-              - arm64
-              - s390x
-              - ppc64el
-              - riscv64
+    plugin: uv
+    source: .
+    build-packages: [git]
+    build-snaps: [astral-uv]
+
+platforms:
+  ubuntu@22.04:amd64:
+  ubuntu@22.04:arm64:
+  ubuntu@22.04:s390x:
+  ubuntu@22.04:ppc64el:
+  ubuntu@24.04:amd64:
+  ubuntu@24.04:arm64:
+  ubuntu@24.04:s390x:
+  ubuntu@24.04:ppc64el:
+  ubuntu@24.04:riscv64:
+
+charm-libs:
+  - lib: prometheus_k8s.prometheus_scrape
+    version: "0"
+  - lib: tempo_coordinator_k8s.tracing
+    version: "0"
+  - lib: certificate_transfer_interface.certificate_transfer
+    version: "1"
