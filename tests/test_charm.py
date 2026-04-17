@@ -150,7 +150,7 @@ class TestCharm(unittest.TestCase):
     def test_tracing_relation_updates_endpoints(self, mock_set_tracing_config, *_):
         harness = self.harness
 
-        relation_id = harness.add_relation("tracing", "tempo-coordinator")
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
 
         provider_data = tracing_provider_data()
@@ -189,7 +189,7 @@ class TestCharm(unittest.TestCase):
     def test_tracing_relation_update_propagates_socket_error(self, *_):
         harness = self.harness
 
-        relation_id = harness.add_relation("tracing", "tempo-coordinator")
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
 
         with self.assertRaisesRegex(
@@ -204,7 +204,7 @@ class TestCharm(unittest.TestCase):
     def test_tracing_relation_removed_clears_endpoints(self, mock_set_tracing_config, *_):
         harness = self.harness
 
-        relation_id = harness.add_relation("tracing", "tempo-coordinator")
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
 
         harness.update_relation_data(
@@ -235,7 +235,7 @@ class TestCharm(unittest.TestCase):
     def test_receive_ca_cert_updates_stored_ca_cert(self, mock_set_tracing_config, *_):
         harness = self.harness
 
-        relation_id = harness.add_relation("receive-ca-cert", "cert-provider")
+        relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
         harness.add_relation_unit(relation_id, "cert-provider/0")
 
         cert_a = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
@@ -271,7 +271,7 @@ class TestCharm(unittest.TestCase):
     def test_receive_ca_cert_removed_clears_stored_ca_cert(self, mock_set_tracing_config, *_):
         harness = self.harness
 
-        relation_id = harness.add_relation("receive-ca-cert", "cert-provider")
+        relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
         harness.add_relation_unit(relation_id, "cert-provider/0")
 
         cert = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
