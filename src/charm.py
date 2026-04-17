@@ -39,10 +39,12 @@ class JujuControllerCharm(CharmBase):
         super().__init__(*args)
 
         self.tracing_requirer = TracingEndpointRequirer(
-            self, protocols=["otlp_http", "otlp_grpc"]
+            self,
+            protocols=["otlp_http", "otlp_grpc"],
+            relation_name='charm-tracing'
         )
         self._certificate_transfer = CertificateTransferRequires(
-            self, relationship_name='receive-ca-cert'
+            self, relationship_name='charm-tracing-ca-cert'
         )
 
         self._stored.set_default(

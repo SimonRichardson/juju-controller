@@ -18,11 +18,11 @@ provides:
     interface: prometheus_scrape
 
 requires:
-  tracing:
+  charm-tracing:
     interface: tracing
     limit: 1
     optional: true
-  receive-ca-cert:
+  charm-tracing-ca-cert:
     interface: certificate_transfer
     limit: 1
     optional: true
