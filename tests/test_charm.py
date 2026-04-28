@@ -8,10 +8,20 @@ import unittest
 
 import yaml
 
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    ProviderApplicationData,
+)
+from charms.tempo_coordinator_k8s.v0.tracing import (
+    ProtocolType,
+    Receiver,
+    TracingProviderAppData,
+    TransportProtocolType,
+)
 from charm import JujuControllerCharm, AgentConfException
 from ops.model import BlockedStatus, ActiveStatus
 from ops.testing import Harness
 from unittest.mock import mock_open, patch
+from unixsocket import ConnectionError as SocketConnectionError
 
 agent_conf = '''
 apiaddresses:
@@ -40,6 +50,25 @@ apiaddresses:
 - "[::1]:17070"
 cacert: fake
 '''
+
+
+def tracing_provider_data():
+    return TracingProviderAppData(
+        receivers=[
+            Receiver(
+                protocol=ProtocolType(name="otlp_grpc", type=TransportProtocolType.grpc),
+                url="tempo-grpc:4317",
+            ),
+            Receiver(
+                protocol=ProtocolType(name="otlp_http", type=TransportProtocolType.http),
+                url="http://tempo-http:4318",
+            ),
+        ]
+    ).dump()
+
+
+def certificate_provider_data(certificates):
+    return ProviderApplicationData(certificates=certificates).dump()
 
 
 class TestCharm(unittest.TestCase):
@@ -116,6 +145,158 @@ class TestCharm(unittest.TestCase):
         harness.remove_relation(relation_id)
         mock_remove_user.assert_called_once_with(f'juju-metrics-r{relation_id}')
 
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_tracing_relation_updates_endpoints(self, mock_set_tracing_config, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
+        harness.add_relation_unit(relation_id, "tempo-coordinator/0")
+
+        provider_data = tracing_provider_data()
+
+        harness.update_relation_data(relation_id, "tempo-coordinator", provider_data)
+
+        self.assertEqual(
+            harness.charm._stored.tracing_endpoints,
+            {"otlp_grpc": "tempo-grpc:4317", "otlp_http": "http://tempo-http:4318"},
+        )
+        mock_set_tracing_config.assert_called_once_with(
+            grpc_endpoint="tempo-grpc:4317",
+            http_endpoint="http://tempo-http:4318",
+            ca_cert=None,
+        )
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_tracing_relation_change_ignores_not_ready(
+        self, mock_set_tracing_config, *_
+    ):
+        harness = self.harness
+
+        event = type("Event", (), {"relation": object()})()
+        with patch.object(harness.charm.tracing_requirer, "is_ready", return_value=False):
+            harness.charm._on_tracing_relation_changed(event)
+
+        self.assertEqual(harness.charm._stored.tracing_endpoints, {})
+        mock_set_tracing_config.assert_not_called()
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch(
+        "controlsocket.ControlSocketClient.set_charm_tracing_config",
+        side_effect=SocketConnectionError("could not connect to socket"),
+    )
+    def test_tracing_relation_update_propagates_socket_error(self, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
+        harness.add_relation_unit(relation_id, "tempo-coordinator/0")
+
+        with self.assertRaisesRegex(
+            SocketConnectionError, "could not connect to socket"
+        ):
+            harness.update_relation_data(
+                relation_id, "tempo-coordinator", tracing_provider_data()
+            )
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_tracing_relation_removed_clears_endpoints(self, mock_set_tracing_config, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
+        harness.add_relation_unit(relation_id, "tempo-coordinator/0")
+
+        harness.update_relation_data(
+            relation_id, "tempo-coordinator", tracing_provider_data()
+        )
+        self.assertEqual(
+            harness.charm._stored.tracing_endpoints,
+            {"otlp_grpc": "tempo-grpc:4317", "otlp_http": "http://tempo-http:4318"},
+        )
+        mock_set_tracing_config.assert_called_once_with(
+            grpc_endpoint="tempo-grpc:4317",
+            http_endpoint="http://tempo-http:4318",
+            ca_cert=None,
+        )
+
+        harness.remove_relation(relation_id)
+
+        self.assertEqual(harness.charm._stored.tracing_endpoints, {})
+        self.assertEqual(mock_set_tracing_config.call_count, 2)
+        mock_set_tracing_config.assert_called_with(
+            grpc_endpoint=None,
+            http_endpoint=None,
+            ca_cert=None,
+        )
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_receive_ca_cert_updates_stored_ca_cert(self, mock_set_tracing_config, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
+        harness.add_relation_unit(relation_id, "cert-provider/0")
+
+        cert_a = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
+        cert_b = "-----BEGIN CERTIFICATE-----\nb\n-----END CERTIFICATE-----"
+        harness.update_relation_data(
+            relation_id,
+            "cert-provider",
+            certificate_provider_data({cert_b, cert_a}),
+        )
+
+        self.assertEqual(harness.charm._stored.ca_cert, "\n".join([cert_a, cert_b]))
+        mock_set_tracing_config.assert_called_once_with(
+            grpc_endpoint=None,
+            http_endpoint=None,
+            ca_cert="\n".join([cert_a, cert_b]),
+        )
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_receive_ca_cert_update_ignores_empty_cert_list(
+        self, mock_set_tracing_config, *_
+    ):
+        harness = self.harness
+
+        event = type("Event", (), {"certificates": set(), "relation_id": 1})()
+        harness.charm._on_receive_ca_cert_updated(event)
+
+        self.assertIsNone(harness.charm._stored.ca_cert)
+        mock_set_tracing_config.assert_not_called()
+
+    @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
+    @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
+    def test_receive_ca_cert_removed_clears_stored_ca_cert(self, mock_set_tracing_config, *_):
+        harness = self.harness
+
+        relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
+        harness.add_relation_unit(relation_id, "cert-provider/0")
+
+        cert = "-----BEGIN CERTIFICATE-----\na\n-----END CERTIFICATE-----"
+        harness.update_relation_data(
+            relation_id,
+            "cert-provider",
+            certificate_provider_data({cert}),
+        )
+        self.assertEqual(harness.charm._stored.ca_cert, cert)
+        mock_set_tracing_config.assert_called_once_with(
+            grpc_endpoint=None,
+            http_endpoint=None,
+            ca_cert=cert,
+        )
+
+        harness.remove_relation(relation_id)
+
+        self.assertIsNone(harness.charm._stored.ca_cert)
+        self.assertEqual(mock_set_tracing_config.call_count, 2)
+        mock_set_tracing_config.assert_called_with(
+            grpc_endpoint=None,
+            http_endpoint=None,
+            ca_cert=None,
+        )
+
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf_apiaddresses_missing)
     def test_apiaddresses_missing(self, _):
         harness = self.harness
@@ -172,7 +353,7 @@ class TestCharm(unittest.TestCase):
 
         # Have another unit enter the relation.
         # Its bind address should end up in the application data bindings list.
-        # Note that the agent ID doesn not correspond with the unit's ID
+        # Note that the agent ID does not correspond with the unit's ID
         relation_id = harness.add_relation('dbcluster', harness.charm.app.name)
         harness.add_relation_unit(relation_id, 'juju-controller/1')
         self.harness.update_relation_data(
@@ -251,7 +432,8 @@ class TestCharm(unittest.TestCase):
 
         self.assertEqual(yaml.safe_load(written), {'db-bind-addresses': bound})
 
-        # The last thing we should have done is send a reload request via the socket..
+        # The last thing we should have done is send a reload request via the
+        # socket..
         mock_reload_config.assert_called_once()
 
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)

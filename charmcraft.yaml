@@ -1,4 +1,35 @@
+name: juju-controller
+description: |
+  The Juju controller charm is used to expose various pieces
+  of functionality of a Juju controller.
+summary: |
+  The Juju controller.
 type: charm
+
+assumes:
+- juju >= 4.1
+
+provides: 
+  dashboard:
+    interface: juju-dashboard
+  website:
+    interface: http
+  metrics-endpoint:
+    interface: prometheus_scrape
+
+requires:
+  charm-tracing:
+    interface: tracing
+    limit: 1
+    optional: true
+  charm-tracing-ca-cert:
+    interface: certificate_transfer
+    limit: 1
+    optional: true
+
+peers:
+  dbcluster:
+    interface: dbcluster
 
 parts:
   charm:
@@ -17,3 +48,11 @@ platforms:
   ubuntu@24.04:s390x:
   ubuntu@24.04:ppc64el:
   ubuntu@24.04:riscv64:
+
+charm-libs:
+  - lib: prometheus_k8s.prometheus_scrape
+    version: "0"
+  - lib: tempo_coordinator_k8s.tracing
+    version: "0"
+  - lib: certificate_transfer_interface.certificate_transfer
+    version: "1"
