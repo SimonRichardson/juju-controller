@@ -156,6 +156,7 @@ class TestCharm(unittest.TestCase):
     @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
     def test_tracing_relation_updates_endpoints(self, mock_set_tracing_config, *_):
         harness = self.harness
+        harness.set_leader(True)
 
         relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
@@ -193,23 +194,27 @@ class TestCharm(unittest.TestCase):
         "controlsocket.ControlSocketClient.set_charm_tracing_config",
         side_effect=SocketConnectionError("could not connect to socket"),
     )
-    def test_tracing_relation_update_propagates_socket_error(self, *_):
+    def test_tracing_relation_update_sets_blocked_on_socket_error(self, *_):
         harness = self.harness
+        harness.set_leader(True)
 
         relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
 
-        with self.assertRaisesRegex(
-            SocketConnectionError, "could not connect to socket"
-        ):
-            harness.update_relation_data(
-                relation_id, "tempo-coordinator", tracing_provider_data()
-            )
+        harness.update_relation_data(
+            relation_id, "tempo-coordinator", tracing_provider_data()
+        )
+
+        self.assertIsInstance(harness.charm.unit.status, BlockedStatus)
+        self.assertEqual(
+            harness.charm.unit.status.message, "failed to set charm tracing config"
+        )
 
     @patch("builtins.open", new_callable=mock_open, read_data=agent_conf)
     @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
     def test_tracing_relation_removed_clears_endpoints(self, mock_set_tracing_config, *_):
         harness = self.harness
+        harness.set_leader(True)
 
         relation_id = harness.add_relation("charm-tracing", "tempo-coordinator")
         harness.add_relation_unit(relation_id, "tempo-coordinator/0")
@@ -241,6 +246,7 @@ class TestCharm(unittest.TestCase):
     @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
     def test_receive_ca_cert_updates_stored_ca_cert(self, mock_set_tracing_config, *_):
         harness = self.harness
+        harness.set_leader(True)
 
         relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
         harness.add_relation_unit(relation_id, "cert-provider/0")
@@ -277,6 +283,7 @@ class TestCharm(unittest.TestCase):
     @patch("controlsocket.ControlSocketClient.set_charm_tracing_config")
     def test_receive_ca_cert_removed_clears_stored_ca_cert(self, mock_set_tracing_config, *_):
         harness = self.harness
+        harness.set_leader(True)
 
         relation_id = harness.add_relation("charm-tracing-ca-cert", "cert-provider")
         harness.add_relation_unit(relation_id, "cert-provider/0")
@@ -487,7 +494,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -521,7 +528,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -545,7 +552,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(False)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -562,7 +569,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -593,7 +600,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         # Bucket is auto-set by the S3Requirer when bucket_name is not provided.
@@ -607,7 +614,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -626,7 +633,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(False)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(
@@ -647,7 +654,7 @@ class TestCharm(unittest.TestCase):
         harness = self.harness
         harness.set_leader(True)
 
-        relation_id = harness.add_relation("s3", "s3-integrator")
+        relation_id = harness.add_relation("s3-backend", "s3-integrator")
         harness.add_relation_unit(relation_id, "s3-integrator/0")
 
         harness.update_relation_data(

@@ -61,9 +61,7 @@ class JujuControllerCharm(CharmBase):
             socket_path=self.METRICS_SOCKET_PATH)
         self._config_change_socket = configchangesocket.ConfigChangeSocketClient(
             socket_path=self.CONFIG_SOCKET_PATH)
-        self._s3 = S3Requirer(self, "s3")
-
-        self._observe()
+        self._s3 = S3Requirer(self, "s3-backend")
 
         self._observe()
 
@@ -351,19 +349,26 @@ class JujuControllerCharm(CharmBase):
 
     def _update_charm_tracing_config(self):
         """Update charm configuration with current tracing endpoint and CA cert information."""
-        self._control_socket.set_charm_tracing_config(
-            grpc_endpoint=(
-                self._stored.tracing_endpoints["otlp_grpc"]
-                if "otlp_grpc" in self._stored.tracing_endpoints
-                else None
-            ),
-            http_endpoint=(
-                self._stored.tracing_endpoints["otlp_http"]
-                if "otlp_http" in self._stored.tracing_endpoints
-                else None
-            ),
-            ca_cert=self._stored.ca_cert,
-        )
+        if not self.unit.is_leader():
+            return
+
+        try:
+            self._control_socket.set_charm_tracing_config(
+                grpc_endpoint=(
+                    self._stored.tracing_endpoints["otlp_grpc"]
+                    if "otlp_grpc" in self._stored.tracing_endpoints
+                    else None
+                ),
+                http_endpoint=(
+                    self._stored.tracing_endpoints["otlp_http"]
+                    if "otlp_http" in self._stored.tracing_endpoints
+                    else None
+                ),
+                ca_cert=self._stored.ca_cert,
+            )
+        except Exception as exc:
+            logger.error("failed to set charm tracing config: %s", exc)
+            self.unit.status = BlockedStatus("failed to set charm tracing config")
 
     def _on_s3_credentials_changed(self, event: CredentialsChangedEvent):
         """Handle new or updated S3 credentials."""
@@ -392,6 +397,7 @@ class JujuControllerCharm(CharmBase):
             except Exception as exc:  # pragma: no cover - defensive
                 logger.error("failed to remove S3 credentials: %s", exc)
                 self.unit.status = BlockedStatus("failed to remove s3 credentials")
+
 
 def metrics_username(relation: Relation) -> str:
     """
