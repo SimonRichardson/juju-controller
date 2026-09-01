@@ -127,6 +127,8 @@ class JujuControllerCharm(CharmBase):
             self.on.dbcluster_relation_changed, self._on_dbcluster_relation_changed)
         self.framework.observe(
             self.on.dbcluster_relation_departed, self._on_dbcluster_relation_departed)
+        self.framework.observe(
+            self.on.update_status, self._on_dbcluster_update_status)
 
         # Tracing relation events are observed to maintain the current tracing
         # endpoint information in the charm's stored state, and to apply it to
@@ -454,6 +456,15 @@ class JujuControllerCharm(CharmBase):
         self._update_bind_addresses(event.relation)
 
     def _on_dbcluster_leader_elected(self, _event):
+        for relation in self.model.relations["dbcluster"]:
+            self._update_bind_addresses(relation)
+
+    def _on_dbcluster_update_status(self, _event):
+        # A controller outage can prevent a peer from receiving a departed
+        # event. Rebuild the application databag from the current membership
+        # so a stale Dqlite address cannot persist indefinitely.
+        if not self.unit.is_leader():
+            return
         for relation in self.model.relations["dbcluster"]:
             self._update_bind_addresses(relation)
 
